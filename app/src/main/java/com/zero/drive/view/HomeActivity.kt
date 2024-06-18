@@ -11,15 +11,16 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.api.services.drive.model.File
+import com.zero.drive.base.BaseActivity
 import com.zero.drive.databinding.ActivityHomeBinding
 import com.zero.drive.viewmodel.HomeViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.nio.file.Files
 
-class HomeActivity : AppCompatActivity() {
+class HomeActivity : BaseActivity() {
 
     private lateinit var binding: ActivityHomeBinding
     private lateinit var homeViewModel: HomeViewModel
@@ -48,7 +49,7 @@ class HomeActivity : AppCompatActivity() {
         binding.fabUpload.setOnClickListener { pickFile() }
     }
 
-    private fun initRecyclerView() {
+    private fun initRecyclerView() { //Initialize recyclerview with adapter and other config
         runOnUiThread {
             binding.rvFiles.apply {
                 adapter = homeViewModel.getFilesAdapter(this@HomeActivity)
@@ -58,6 +59,11 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 1. Retrieve the access token
+     * 2. Initialize the Drive Api
+     * 3. Call function to retrieve the files list from Google drive
+     */
     private fun initHelperAndGetDriveFiles() {
         CoroutineScope(Dispatchers.Main).launch {
             val token = intent?.getStringExtra(MainActivity.ACCESS_TOKEN_KEY)
@@ -67,31 +73,47 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun attachObservers() {
+        //Once files are fetched, update ui
         homeViewModel.isFilesListFetched.observe(this) {
+            isLoaded()
             if (it != null) {
                 homeViewModel.updateFilesData(this@HomeActivity, it)
                 binding.tvFileCount.text = "Files: ${it.size}"
             }
         }
 
+        //Request download - 'it' has the file to be downloaded
         homeViewModel.requestFileDownload.observe(this) {
             if (it != null) {
                 downloadFile(it)
             }
         }
 
+        /**
+         * File download status
+         * it.first - Status message (Success or error message)
+         * it.second - Downloaded file to open automatically
+         * it.third - Mime Type of the file downloaded
+         */
         homeViewModel.responseFileDownloadedSuccessfully.observe(this) {
+            isLoaded()
             runOnUiThread {
-                Toast.makeText(this@HomeActivity, it.first, Toast.LENGTH_SHORT).show()
+                showToast(it.first)
                 if (it.second != null) {
                     openDownloadedFile(it.second, it.third)
                 }
             }
         }
 
+        /**
+         * File upload status - If uploaded, refreshes the list
+         * it.first - Status message (Success or error message)
+         * it.second - Status flag
+         */
         homeViewModel.responseFileUpload.observe(this) {
+            isLoaded()
             runOnUiThread {
-                Toast.makeText(this@HomeActivity, it.first, Toast.LENGTH_SHORT).show()
+                showToast(it.first)
                 if (it.second) {
                     homeViewModel.getAllFilesFromDrive()
                 }
@@ -99,6 +121,11 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Once file downloaded, launch intent to open it from storage
+     * @param file Reference to the file downloaded and stored in the device
+     * @param type Type of the file downloaded (To show apt apps to open the file in)
+     */
     private fun openDownloadedFile(file: java.io.File?, type: String?) {
         val fileUri: Uri = FileProvider.getUriForFile(
             this,
@@ -116,6 +143,12 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * File picker to Pick File to be Uploaded to Drive
+     * 1. Checks if apt permissions are available for the app
+     * 2. If available, launches file picker
+     * 3. Otherwise, requests read/write storage permission
+     */
     private fun pickFile() {
         if (hasWritePermissions()) {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -126,9 +159,11 @@ class HomeActivity : AppCompatActivity() {
         else requestMultiplePermissions.launch(permissions)
     }
 
+    //Uri of the selected uploaded file is obtained
     private val pickFile = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.data?.let { uri ->
+                isLoading()
                 handleSelectedFile(uri)
             }
         } else {
@@ -136,6 +171,7 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    //Gather metadata such as FileName and get the file ready for upload
     @SuppressLint("Range")
     private fun handleSelectedFile(uri: Uri) {
         val cursor = contentResolver.query(uri, null, null, null, null)
@@ -152,6 +188,7 @@ class HomeActivity : AppCompatActivity() {
 
     private fun downloadFile(file: File) {
         if (hasWritePermissions()) {
+            isLoading()
             homeViewModel.downloadFile(file)
         }
         else {
@@ -159,12 +196,15 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    //Check if the app has storage permissions
     private fun hasWritePermissions(): Boolean {
         return (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
                 && checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED)
                 || Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+        //Storage Permissions not needed if Android version is >= 30
     }
 
+    //Returns result of the runtime permission acquired from users
     private val requestMultiplePermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -176,6 +216,7 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+        //Show rationale as to why we need certain permissions
     private fun showRationale() {
         AlertDialog.Builder(this)
             .setTitle("Storage permission required")
@@ -187,10 +228,30 @@ class HomeActivity : AppCompatActivity() {
             .show()
     }
 
+    //To allow permissions
     private fun openSettings() {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
         val uri = Uri.fromParts("package", packageName, null)
         intent.data = uri
         startActivity(intent)
     }
+
+
+    //Show progress bar
+    private fun isLoading() {
+        runOnUiThread {
+            binding.fabUpload.hide()
+            binding.progress.visibility = View.VISIBLE
+        }
+    }
+
+    //Hide progress bar
+    private fun isLoaded() {
+        runOnUiThread {
+            binding.fabUpload.show()
+            binding.progress.visibility = View.GONE
+        }
+    }
+
+
 }

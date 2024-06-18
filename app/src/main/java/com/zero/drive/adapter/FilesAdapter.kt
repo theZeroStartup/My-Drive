@@ -7,6 +7,12 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.api.services.drive.model.File
 import com.zero.drive.databinding.ItemFilesBinding
 
+/**
+ * Adapter to display the retrieved Google Drive files in a list-type view
+ *
+ * @property filesList List of all files retrieved from the Drive
+ * @property onDownloadRequested Callback to the view model to request download of the selected file
+ */
 class FilesAdapter(private val context: Context, private var filesList: List<File?>,
                    private val onDownloadRequested: (Int, File?) -> Unit):
     RecyclerView.Adapter<FilesAdapter.ViewHolder>() {
@@ -29,6 +35,7 @@ class FilesAdapter(private val context: Context, private var filesList: List<Fil
         holder.binding.ivDownload.setOnClickListener { onDownloadRequested.invoke(position, file) }
     }
 
+    //Updates the list of files with new list
     fun updateData(files: List<File?>) {
         filesList = files
         notifyDataSetChanged()

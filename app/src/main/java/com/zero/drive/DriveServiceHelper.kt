@@ -70,8 +70,8 @@ class DriveServiceHelper(private val mDriveService: Drive? = null) {
         do {
             result = mDriveService?.files()?.list()
                 ?.setSpaces("drive")
-                ?.setQ("'me' in owners or sharedWithMe")
-                ?.setFields("nextPageToken, files(id, name, fileExtension, mimeType)")
+                ?.setQ("'me' in owners or sharedWithMe") //Can have mimetype or any other filters
+                ?.setFields("nextPageToken, files(id, name, fileExtension, mimeType)") //Returns the specified metadata
                 ?.setPageToken(pageToken)
                 ?.execute()
             pageToken = result?.nextPageToken
@@ -99,6 +99,8 @@ class DriveServiceHelper(private val mDriveService: Drive? = null) {
                 metadata,
                 fileContent
             )?.execute()
+
+            //Contains the uploaded file details as how it'll be on the Drive
             val googleDriveFileHolder = GoogleDriveFileHolder()
             googleDriveFileHolder.id = (fileMeta?.id)
             googleDriveFileHolder.name = (fileMeta?.name)
